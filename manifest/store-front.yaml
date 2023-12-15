@@ -17,11 +17,11 @@ spec:
       containers:
       - name: store-front
         # image: ghcr.io/<REPLACE_THIS_WITH_YOUR_GITHUB_USERNAME>/aks-store-demo/store-front:latest # {"$imagepolicy": "flux-system:store-front"}
-        image: ghcr.io/mbn-ms-dk/aks-store-demo/store-front:latest # {"$imagepolicy": "flux-system:store-front"}
+        image: ghcr.io/mbn-ms-dk/aks-store-demo/store-front:1.0.0 # {"$imagepolicy": "flux-system:store-front"}
         ports:
         - containerPort: 8080
           name: store-front
-        env: 
+        env:
         - name: VUE_APP_ORDER_SERVICE_URL
           value: "http://order-service:3000/"
         - name: VUE_APP_PRODUCT_SERVICE_URL
