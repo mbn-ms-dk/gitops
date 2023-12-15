@@ -59,3 +59,18 @@ Run the following command to create the configuration and export it to a YAML fi
 ```bash
 flux create source git aks-store-demo --url=$ghRepoUrl --branch=main --interval=1m --secret-ref=aks-store-demo --export > ./clusters/dev/aks-store-demo-source.yaml
 ```
+
+We also need to specify the Kustomization resource to tell FluxCD where to find the app deployment manifests in our repo. Run the following command to create the configuration and export it to a YAML file which we'll also commit to our repo.
+
+```bash
+flux create kustomization aks-store-demo --source=aks-store-demo --path="./overlays/dev" --prune=true --wait=true --interval=1m --retry-interval=2m --health-check-timeout=3m --export > ./clusters/dev/aks-store-demo-kustomization.yaml
+```
+
+Now there are two new Flux resource manifests files. Commit and push the changes to the repo and merge the pull request, so flux can begin the reconciliation process.
+
+Watch after the pull reqeust is merged to see the reconciliation process.
+
+```bash
+flux get kustomizations --watch
+```
+
