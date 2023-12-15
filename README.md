@@ -190,7 +190,7 @@ Using the Flux CLI, you can force FluxCD to reconcile the cluster with the desir
 flux reconcile kustomization aks-store-demo-dev --with-source
 ```
 
-fter a minute or two you should see the pods coming online in the new dev namespace. This is FluxCD reconciling the cluster with the desired state defined in the repo.
+After a minute or two you should see the pods coming online in the new dev namespace. This is FluxCD reconciling the cluster with the desired state defined in the repo.
 
 You can check on the pods using the following command.
 

@@ -74,3 +74,169 @@ Watch after the pull reqeust is merged to see the reconciliation process.
 flux get kustomizations --watch
 ```
 
+Confirm the GitRepository and Kustomization resources have been created.
+
+```bash
+flux get sources git
+flux get kustomizations
+```
+Run the following command to ensure all the Pods are running.
+
+```bash
+kubectl get pods -n dev
+```
+
+Once all the Pods are running, run the following command to grab the public IP of the store-front service.
+
+```bash
+kubectl get svc/store-front -n dev
+```
+
+Navigate to the IP address in a browser and you should see the store front page.
+
+## Setup the release workflow
+
+The source code for the `aks-store-demo`` application is located in a different repository than where our manifests are.
+
+Warning: To give you a bit of a warning, we'll be flipping back and forth between the aks-store-demo and aks-store-demo-manifests repository directories.
+
+Hint: you can use the cd - command to flip back and forth between the last two directories you were in.
+
+The application code is in the [aks-store-demo repository](https://github.com/azure-samples/aks-store-demo). Run the following commands to fork and clone the repo.
+
+```bash
+# navigate to the home directory or wherever you want to clone the repo
+cd -
+
+# fork and clone the repo to your local machine
+gh repo fork https://github.com/azure-samples/aks-store-demo.git --clone
+
+# make sure you are in the aks-store-demo directory
+cd aks-store-demo
+
+# since we are in a forked repo, we need to set the default to be our fork
+gh repo set-default
+```
+
+Currently the `aks-store-demo` repository has Continuous Integration (CI) workflows to build and push container images using `GITHUB_SHA` as the image tag. We need to create a new release workflow that will build and push a new container image using [semantic versioning](https://semver.org/). Flux's image update automation policy which is used to determine the most recent image tag can use various methods including numerical tags, alphabetical tags, and semver tags. So in this case, as much as I'd like to use the `GITHUB_SHA`, it does not provide a conducive way to determine "latest".
+
+Therefore, we need to tag our releases with semantic version numbers. GitHub offers a way to create [tagged releases](https://docs.github.com/repositories/releasing-projects-on-github/about-releases). Additionally, GitHub Actions have the ability to [trigger workflows when a new release is published](https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#release).
+
+In the aks-store-demo repository, create a new file called `release-store-front.yaml` in the `.github/workflows` directory. Copy and paste the following contents into the file.
+
+```yaml
+name: release-store-front
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-container-image:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set environment variables
+        id: set-variables
+        run: |
+          echo "REPOSITORY=ghcr.io/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "IMAGE=store-front" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})" >> "$GITHUB_OUTPUT"
+          echo "CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Env variable output
+        id: test-variables
+        run: |
+          echo ${{ steps.set-variables.outputs.REPOSITORY }}
+          echo ${{ steps.set-variables.outputs.IMAGE }}
+          echo ${{ steps.set-variables.outputs.VERSION }}
+          echo ${{ steps.set-variables.outputs.CREATED }}
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: src/store-front
+          file: src/store-front/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.set-variables.outputs.REPOSITORY }}/${{ steps.set-variables.outputs.IMAGE }}:latest
+            ${{ steps.set-variables.outputs.REPOSITORY }}/${{ steps.set-variables.outputs.IMAGE }}:${{ steps.set-variables.outputs.VERSION }}
+          labels: |
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.created=${{ steps.set-variables.outputs.CREATED }}
+            org.opencontainers.image.revision=${{ steps.set-variables.outputs.VERSION }}
+```
+
+This workflow will be triggered each time a new release is published and the `${GITHUB_REF#refs/tags/}` bit allows us to extract the release version to use as an image tag.
+
+Save the file, then commit and push the changes to the repo.
+
+## Update the application
+
+Since we're in the app repo, let's make a change to it.
+
+We'll make a very small edit to the `src/store-front/src/components/TopNav.vue` file and update the title of the application to include a version number.
+
+Open the file and change the title on line 4 from Azure Pet Supplies to Azure Pet Supplies v1.0.0.
+
+Commit and push the changes to the repo.
+
+Using GitHub CLI, create and publish a new release tagged as 1.0.0. This will trigger the release workflow we just created.
+
+```bash
+gh release create 1.0.0 --generate-notes
+```
+
+Wait about 10 seconds then run the following command to watch the workflow run.
+
+```bash
+gh run watch
+```
+
+With the `store-front` container image release workflow setup, let's configure image update automation in Flux.
+
+## Configure image update automation
+
+Note: Flip back over to the aks-store-demo-manifests repo!
+
+To setup FluxCD to listen for changes in the GitHub Container Registry, we need to create a new `ImageRepository` resource. You need to create an `ImageRepository` resource for each image you want to automate. In this case, we're only automating the `store-front` image.
+
+Using the FluxCLI, run the following command to create the manifest for the `ImageRepository` resource.
+
+```bash
+flux create image repository store-front --image=ghcr.io/$ghUser/aks-store-demo/store-front --interval=1m --export > ./clusters/dev/aks-store-demo-store-front-image.yaml
+```
+
+Run the following command to create an `ImagePolicy` resource to tell FluxCD how to determine the newest image tags. We'll use the `semver` filter to only allow image tags that are valid semantic versions and equal to or greater than 1.0.0. There are other [filters](https://fluxcd.io/flux/guides/image-update/#imagepolicy-examples) you can use as well.
+
+```bash
+flux create image policy store-front --image-ref=store-front --select-semver='>=1.0.0' --export > ./clusters/dev/aks-store-demo-store-front-image-policy.yaml
+```
+
+Finally, run the following command to create an `ImageUpdateAutomation` resource which enables FluxCD to update images tags in our YAML manifests.
+
+```bash
+flux create image update store-front --interval=1m --git-repo-ref=aks-store-demo --git-repo-path="./manifest" --checkout-branch=main --author-name=fluxcdbot --author-email=fluxcdbot@users.noreply.github.com --commit-template="{{range .Updated.Images}}{{println .}}{{end}}" --export > ./clusters/dev/aks-store-demo-store-front-image-update.yaml
+```
+
+If you are uncomfortable with FluxCD making changes directly to the checkout branch (in this case main), you can create a separate branch for FluxCD (using the --push-branch parameter) to specify where commits should be pushed to. This will then enable you to follow your normal Git workflows (e.g., create a pull request to merge the changes into the main branch).
+
+Commit and push the new Flux resources to the repo.

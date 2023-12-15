@@ -1,0 +1,9 @@
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: store-front
+  namespace: flux-system
+spec:
+  image: ghcr.io/mbn-ms-dk/aks-store-demo/store-front
+  interval: 1m0s
