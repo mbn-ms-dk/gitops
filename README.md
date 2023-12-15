@@ -216,7 +216,7 @@ flux get kustomization aks-store-demo-dev -n flux-system
 flux events
 
 # view logs from the flux controllers
-flux log
+flux logs
 
 # view stats of the flux controllers
 flux stats
