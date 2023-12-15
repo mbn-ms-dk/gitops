@@ -4,6 +4,10 @@
 
 This guide will help you to use FluxCD AKS Extension to deploy your application to AKS cluster.
 
+The deployed application is [AKS Store Demo](https://github.com/Azure-Samples/aks-store-demo)
+
+To start from the beginning, clone or fork this repo, then delete all files except README.md and manifests folder. Then follow the steps below.
+
 ## Prerequisites
 
 - [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
@@ -124,3 +128,58 @@ kustomize build | kubectl delete -f -
 # or using kubectl
 kubectl delete -k .
 ```
+
+## Deploying Applications with FluxCD
+
+FluxCD will monitor the repo for changes and reconcile the cluster with the desired state defined in the repo.
+
+Run the following command to get the GitHub HTTP URL for your repo
+
+```bash
+$ghRepoUrl=$(gh repo view --json url | jq -r '.url')
+```
+
+Using Azure CLI again, let's configure the FluxCD AKS extension to connect to our GitHub repo.
+
+```bash
+az k8s-configuration flux create --cluster-name $aksClusterName --resource-group $rgName --cluster-type managedClusters --name aks-store-demo --url $ghRepoUrl --branch main --kustomization name=dev path=./overlays/dev --namespace flux-system
+```
+
+The above command is telling FluxCD AKS extension to connect to our GitHub repo and monitor the `main` branch for changes. When changes are detected, FluxCD will apply the changes to the cluster using the Kustomization defined in the dev overlay. Lastly, we tell Flux to create new Flux GitRepository and Kustomization resources in the flux-system namespace. You can change this to whatever namespace you want.
+
+If you run the following Flux CLI commands you should see some resources created.
+
+```bash
+flux get sources git
+flux get kustomizations
+```
+
+If all went well, you should see your pods coming online. Let's watch for them:
+
+```bash
+watch kubectl get pods -n store-dev -w
+```
+
+Let's test the application by grabbing the public IP address of the store service:
+
+```bash
+kubectl get svc/store-front -n store-dev
+```
+
+Open a browser and navigate to the IP address. You should see the store front page.
+
+## Making and managing changes
+
+With the FluxCD AKS extension installed and connected to our GitHub repo, we can now make changes by simply editing the kubernetes manifests and committing/pushing the changes back to the remote repo. At this point, it's all about Git workflows and processes.
+
+Let's make a small change to the dev overlay kustomization.yaml file. Let's say we want to change the name of the namespace from store-dev to just dev.
+
+Open the overlays/dev/kustomization.yaml file and change the namespace value from store-dev to dev.
+
+Compare the changes:
+
+```bash
+git diff overlays/dev/kustomization.yaml
+```
+
+Add the change, commit, and push to GitHub.
