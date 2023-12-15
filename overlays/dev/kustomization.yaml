@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
 - namespace.yaml
 - ./../../manifest
-namespace: store-dev
+namespace: dev
