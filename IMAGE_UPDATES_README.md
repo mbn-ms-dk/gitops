@@ -240,3 +240,33 @@ flux create image update store-front --interval=1m --git-repo-ref=aks-store-demo
 If you are uncomfortable with FluxCD making changes directly to the checkout branch (in this case main), you can create a separate branch for FluxCD (using the --push-branch parameter) to specify where commits should be pushed to. This will then enable you to follow your normal Git workflows (e.g., create a pull request to merge the changes into the main branch).
 
 Commit and push the new Flux resources to the repo.
+
+After a few minutes, run the following command to see the status of the image update automation resources.
+
+```bash
+flux get image repository store-front
+flux get image policy store-front
+flux get image update store-front
+```
+
+The image update automation is setup but it won't do anything until we tell it which Deployments to update.
+
+## Update the manifest
+
+We're going to stick with updating the `store-front` only. So we'll need to update the `store-front` deployment manifest to use the `ImagePolicy` resource we created earlier. This is done by marking the manifest with a comment.
+
+Open the `manifest/store-front.yaml` file using your favorite editor.
+
+On line 19, update the image to use your GitHub Container Registry. Then at the end of the line, add a comment to include the namespace and name of your `ImagePolicy` resource. This marks the deployment for Flux to update.
+
+The comment is super important because Flux will not implement the image tag policy if it doesn't have this comment.
+
+The line should look something like this:
+
+```yaml
+image: ghcr.io/<REPLACE_THIS_WITH_YOUR_GITHUB_USERNAME>/aks-store-demo/store-front:latest # {"$imagepolicy": "flux-system:store-front"}
+```
+
+Setting the marker in the deployment manifest is fine for this demo, but ideally you'd want to set it in the kustomization manifest instead.
+
+Commit and push the new Flux resources to the repo.
