@@ -54,7 +54,7 @@ az k8s-extension create --cluster-name $aksClusterName --resource-group $rgName 
 With the extension installed, you can run the following Flux CLI command to get the status of the installation.
 
 ```bash
-flux check
+flux check --pre
 ```
 
 Flux installs many new Custom Resource Definitions (CRDs) in the cluster. These CRDs are how you interact with FluxCD. You can run the following command to see all the new CRDs
@@ -183,3 +183,44 @@ git diff overlays/dev/kustomization.yaml
 ```
 
 Add the change, commit, and push to GitHub.
+
+Using the Flux CLI, you can force FluxCD to reconcile the cluster with the desired state defined in the repo.
+
+```bash
+flux reconcile kustomization aks-store-demo-dev --with-source
+```
+
+fter a minute or two you should see the pods coming online in the new dev namespace. This is FluxCD reconciling the cluster with the desired state defined in the repo.
+
+You can check on the pods using the following command.
+
+```bash
+kubectl get pods -n dev
+```
+
+## Monitoring and Troubleshooting
+
+Some tips when it comes to monitoring and troubleshooting Flux resources is to use the Flux CLI. You can use some of these basic commands to get information about Flux and its resources:
+
+```bash
+# check the status of the flux installation
+flux check
+
+# get info about the GitRepository resource
+flux get source git aks-store-demo-dev -n flux-system
+
+# get info about the Kustomization resource
+flux get kustomization aks-store-demo-dev -n flux-system
+
+# view event logs from the flux controllers
+flux events
+
+# view logs from the flux controllers
+flux log
+
+# view stats of the flux controllers
+flux stats
+```
+
+This showed the setup of FluxCD AKS Extension and how to use it to deploy applications to AKS cluster. Now we will move a bit deeper and how to use FluxCD to automate images updates.
+[Image updates](./IMAGE_UPDATES_README.md)
