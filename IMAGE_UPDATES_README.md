@@ -269,4 +269,4 @@ image: ghcr.io/<REPLACE_THIS_WITH_YOUR_GITHUB_USERNAME>/aks-store-demo/store-fro
 
 Setting the marker in the deployment manifest is fine for this demo, but ideally you'd want to set it in the kustomization manifest instead.
 
-Commit and push the changes to the repo
+Commit and push the new Flux resources to the repo.
