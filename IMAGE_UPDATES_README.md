@@ -270,3 +270,52 @@ image: ghcr.io/<REPLACE_THIS_WITH_YOUR_GITHUB_USERNAME>/aks-store-demo/store-fro
 Setting the marker in the deployment manifest is fine for this demo, but ideally you'd want to set it in the kustomization manifest instead.
 
 Commit and push the new Flux resources to the repo.
+
+At this point, we've successfully setup image automation in our cluster. Time to test.
+
+## Test the image automation
+
+We're going to test the developer workflow we laid out at the beginning of this article.
+
+### Make a change
+
+Flip back over to the aks-store-demo repo
+
+Make another change to the TopNav.vue file. This time, change the title to Azure Pet Supplies v2.0.0.
+
+Commit and push the changes to the repo.
+
+Create a new 2.0.0 release. This will trigger the release workflow.
+
+```bash
+gh release create 2.0.0 --generate-notes
+
+# wait about 5 seconds then run the following command
+gh run watch
+```
+
+## Verify the image update
+
+After a few minutes, you should see the new image tag in the aks-store-demo repo and the store-front deployment being updated in the cluster.
+
+The reconcile interval for ImagePolicy was set to 1 minute. So after 1 minute or so, we should see that the update was successful.
+
+```bash
+flux get image policy store-front
+```
+
+Now check the store-front deployment to see the new image tag.
+
+```bash
+kubectl get deployment store-front -n dev -o=jsonpath='{.spec.template.spec.containers[0].image}'
+```
+
+You should see that the image tag has been updated to `2.0.0`.
+
+Get the public IP of the store-front service by running the following command.
+
+```bash
+kubectl get svc/store-front -n dev
+```
+
+Navigate to the IP address in a browser and you should see the store front page with the new title.
