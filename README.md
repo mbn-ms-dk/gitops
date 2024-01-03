@@ -1,8 +1,10 @@
-# Step by step guid to use FluxCD AKS Extension
+# Guide to use FluxCD AKS Extension
 
 ## Introduction
 
 This guide will help you to use FluxCD AKS Extension to deploy your application to AKS cluster.
+
+Based on the article [Automate your deployments with FluxCD AKS Extension](https://dev.to/azure/git-going-with-gitops-on-aks-a-step-by-step-guide-using-fluxcd-aks-extension-499m)
 
 The deployed application is [AKS Store Demo](https://github.com/Azure-Samples/aks-store-demo)
 
