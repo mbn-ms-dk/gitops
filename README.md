@@ -6,7 +6,7 @@ This guide will help you to use FluxCD AKS Extension to deploy your application 
 
 The deployed application is [AKS Store Demo](https://github.com/Azure-Samples/aks-store-demo)
 
-To start from the beginning, clone or fork this repo, then delete all files except README.md and manifests folder. Then follow the steps below.
+To start from the beginning, clone or fork this repo, then delete all files except README.md, IMAGE_UPDATES_README.md and manifests folder. Then follow the steps below.
 
 ## Prerequisites
 
