@@ -212,3 +212,43 @@ flux bootstrap github create \
   --components-extra=image-reflector-controller,image-automation-controller
 ```
 
+In order for the `image-automation-controller` to write commits to our repo, we need to create a Kubernetes secret to store our GitHub credentials. Run the following command to create the secret:
+
+```bash
+flux create secret git myapp \
+  --url=$GITHUB_REPO_URL \
+  --username=$GITHUB_USER \
+  --password=$GITHUB_TOKEN
+```
+
+We don't need the GitHub PAT token anymore, so run the following command to discard it.
+
+```bash
+unset GITHUB_TOKEN
+```
+
+Next we need to create a `GitRepository` resource.
+Run the following command to create the configuration and export it to a YAML file which we'll commit to our repo:
+
+```bash
+flux create source git myapp \
+  --url=$GITHUB_REPO_URL \
+  --branch=main \
+  --interval=1m \
+  --secret-ref=myapp \
+  --export > ./clusters/dev/myapp-source.yaml
+```
+
+We also need to specify the Kustomization resource to tell FluxCD where to find the app deployment manifests in our repo. Run the following command to create the configuration and export it to a YAML file which we'll also commit to our repo.
+
+```bash
+flux create kustomization myapp \
+  --source=gitops \
+  --path="./overlays/dev" \
+  --prune=true \
+  --wait=true \
+  --interval=1m \
+  --retry-interval=2m \
+  --health-check-timeout=3m \
+  --export > ./clusters/dev/myapp-kustomization.yaml
+```
