@@ -1,14 +1,16 @@
-# Guide to use FluxCD AKS Extension
+# Guide to to automate image updates with FluxCD on AKS
+
+The intended workflow:
+
+1. Create the application
+2. Test locally
+3. Commit and push to GitHub
+4. push image to Azure Container Registry
+5. Kustomize the manifests
 
 ## Introduction
 
-This guide will help you to use FluxCD AKS Extension to deploy your application to AKS cluster.
-
-Based on the article [Automate your deployments with FluxCD AKS Extension](https://dev.to/azure/git-going-with-gitops-on-aks-a-step-by-step-guide-using-fluxcd-aks-extension-499m)
-
-The deployed application is [AKS Store Demo](https://github.com/Azure-Samples/aks-store-demo)
-
-To start from the beginning, clone or fork this repo, then delete all files except README.md, IMAGE_UPDATES_README.md and manifests folder. Then follow the steps below.
+This guide will help you to use FluxCD to deploy your application to AKS cluster.
 
 ## Prerequisites
 
@@ -18,17 +20,72 @@ To start from the beginning, clone or fork this repo, then delete all files exce
 - [Flux CLI](https://fluxcd.io/docs/installation/#install-the-flux-cli)
 - [Kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/)
 
-## Create AKS Cluster
 
-Create AKS cluster using Azure CLI
+## Create the application
+
+Create a `src` directory and use dotnet new to create blazor server app.
 
 ```bash
-$rgName="flux-rg"
-$aksClusterName="flux-aks"
-$location="swedencentral"
+mkdir src
+cd src
+dotnet new blazorserver -o MyApp
+```
 
+Navigate to the app directory and run the app
+
+```bash
+cd MyApp
+dotnet run
+```
+
+You should see the app running on http://localhost:5073
+
+![MyApp](./images/initrun.png)
+
+Navigate to root and use dotnet new to create a new solution file.
+
+```bash
+cd ..
+dotnet new sln 
+```
+
+Add MyApp to the solution
+
+```bash
+dotnet sln add src/MyApp/MyApp.csproj
+```
+
+Create a dockerfile for the app
+
+## Create an Azure Container Registry
+
+```bash	
+$rgName="ffi-rg"
+$aksClusterName="ffi-aks"
+$location="swedencentral"
+$acrName="ffiacr"
+```	
+
+Create a resource group for the Azure Container Registry and create the Azure Container Registry.
+
+```bash
 az group create --name $rgName --location $location
-az aks create --resource-group $rgName --name $aksClusterName  --enable-addons monitoring --enable-oidc-issuer --enable-workload-identity
+az acr create --resource-group $rgName --name $acrName --sku Basic
+```
+
+Build and push the image to the Azure Container Registry.
+
+```bash
+az acr build --registry $acrName -t myapp:v1 -f ./src/MyApp/dockerfile .
+```
+
+## Create AKS Cluster
+
+Create AKS cluster using Azure CLI and attach the Azure Container Registry to the AKS cluster.
+
+```bash
+az group create --name $rgName --location $location
+az aks create --resource-group $rgName --name $aksClusterName  --enable-addons monitoring --attach-acr $acrName
 ```
 
 Get AKS cluster credentials
@@ -37,50 +94,48 @@ Get AKS cluster credentials
 az aks get-credentials --resource-group $rgName --name $aksClusterName
 ```
 
-Before you can install the FluxCD AKS extension using Azure CLI, you need to make sure that you have the proper extensions installed.
+Get your login server address using the az acr list command and query for your login server.
 
 ```bash
-az extension add --name aks-preview
-az extension add --name k8s-extension
-az extension add --name k8s-configuration
+az acr list --resource-group $rgName --query "[].{acrLoginServer:loginServer}" --output table
 ```
 
-## Install FluxCD AKS Extension
+Set the image property for the containers in the manifests/myapp.yaml file.
 
-With the Azure CLI extensions for Kubernetes installed, you can now install the FluxCD AKS extension using the following command.
+Deploy the app to AKS cluster
 
 ```bash
-az k8s-extension create --cluster-name $aksClusterName --resource-group $rgName --cluster-type managedClusters --extension-type microsoft.flux --name aks-store-demo
+kubectl apply -f manifests/myapp.yaml
 ```
 
-With the extension installed, you can run the following Flux CLI command to get the status of the installation.
+Test the app
 
 ```bash
-flux check --pre
+kubectl get svc myapp
 ```
+The output should look like this:
 
-Flux installs many new Custom Resource Definitions (CRDs) in the cluster. These CRDs are how you interact with FluxCD. You can run the following command to see all the new CRDs
-
-```bash
-kubectl get crds | grep flux
-```
+![MyApp](./images/testonaks.png)
 
 ## Prepare Kubernetes manifests for Kustomize
 
-In the manifests folder, you will find the manifest files. Now you need to create a Kustomization file to tell FluxCD how to deploy the manifests.
-This will be done using the kustomize CLI.
+Kustomize is not a templating engine like Helm, it is more like a patching engine. It allows you to create a base set of Kubernetes manifests and then patch them with environment specific configurations. These environmental configurations are known as "overlays". So you can have a `dev` overlay, a `prod` overlay, a `staging` overlay, etc. and use them to patch the base manifests with environment specific configurations.
+
+Use the Kustomize CLI, run the following command to create the base kustomization.yaml file:
 
 ```bash
 cd manifests
 kustomize create --autodetect
 ```
 
-## Create a `dev`´overlay
+## Create a `dev` overlay
 
 Next, we need to create an overlay for our dev environment.
 
+We need to navigate back to the root of the repo directory and create a dev overlay directory.
+
 ```bash
-cd ..
+cd ../
 mkdir -p overlays/dev
 cd overlays/dev
 ```
@@ -88,40 +143,29 @@ cd overlays/dev
 We want our dev deployment to deploy to a new namespace so we'll create a new manifest to create one. Run the following command to create a new manifest file.
 
 ```bash
-kubectl create namespace store-dev --dry-run=client -o yaml > namespace.yaml
+kubectl create namespace myapp-dev --dry-run=client -o yaml > namespace.yaml
 ```
-
 Generate the kustomization.yaml file for our dev overlay using the following command.
 
 ```bash
-kustomize create --resources namespace.yaml,./../../manifest --namespace store-dev
+kustomize create --resources namespace.yaml,./../../manifests --namespace myapp-dev
 ```
 
-In this kustomization.yaml file, we see that it will include our new namespace.yaml file and all manifests in the manifest directory. We also have a namespace: store-dev entry in the kustomization and this is what instructs Kustomize to patch and add the store-dev namespace to the base manifests.
-
-## Kustomize in action
-
-Let's test the dev overlay by running the following command from the dev directory
+Let's test the `dev` overlay by running the following command from the `dev` directory:
 
 ```bash
 kustomize build
 ```
 
-Notice how all the manifests are patched with the store-dev namespace and output to the console. This is how Kustomize works. It patches the base manifests with environment specific configurations and outputs the patched manifests to the console.
+Notice how all the manifests are patched with the `myapp-dev` namespace and output to the console. This is how Kustomize works. It patches the base manifests with environment specific configurations and outputs the patched manifests to the console.
 
-To deploy these patched manifests, you would run a command like this:
+To deploy these patched manifests, you would run a command like this.
 
 ```bash
 kustomize build | kubectl apply -f -
 ```
 
-Kustomize is also built into kubectl so you can run the following command to apply the manifests to your cluster.
-
-```bash
-kubectl apply -k .
-```
-
-Hopefully you didn't run the commands above. If you did, no worries, you can delete this deployment with either of these commands.
+Hopefully you didn't run the command above. If you did, then you can delete this deployment with either of these commands.
 
 ```bash
 # using kustomize
@@ -131,98 +175,40 @@ kustomize build | kubectl delete -f -
 kubectl delete -k .
 ```
 
-## Deploying Applications with FluxCD
+## Bootstrapping FluxCD
 
-FluxCD will monitor the repo for changes and reconcile the cluster with the desired state defined in the repo.
+Use the Flux CLI to bootstrap FluxCD onto the AKS cluster. This process will enable us to have a bit more control over the installation and gives us the ability to save the Flux resources to our GitHub repo.
 
-Run the following command to get the GitHub HTTP URL for your repo
-
-```bash
-$ghRepoUrl=$(gh repo view --json url | jq -r '.url')
-```
-
-Using Azure CLI again, let's configure the FluxCD AKS extension to connect to our GitHub repo.
+First, we need the [Flux CLI](https://fluxcd.io/flux/installation/). Once you have the CLI installed, run the following command to ensure your cluster is ready for bootstrapping.
 
 ```bash
-az k8s-configuration flux create --cluster-name $aksClusterName --resource-group $rgName --cluster-type managedClusters --name aks-store-demo --url $ghRepoUrl --branch main --kustomization name=dev path=./overlays/dev --namespace flux-system
+flux check --pre
 ```
 
-The above command is telling FluxCD AKS extension to connect to our GitHub repo and monitor the `main` branch for changes. When changes are detected, FluxCD will apply the changes to the cluster using the Kustomization defined in the dev overlay. Lastly, we tell Flux to create new Flux GitRepository and Kustomization resources in the flux-system namespace. You can change this to whatever namespace you want.
-
-If you run the following Flux CLI commands you should see some resources created.
+We need to set some environment variables to for the Flux bootstrapping process. Run the following commands to set the environment variables (I switch to WSL here).
 
 ```bash
-flux get sources git
-flux get kustomizations
+# set the repo url
+export GITHUB_REPO_URL=$(gh repo view --json url | jq .url -r)
+
+# set your GitHub username
+export GITHUB_USER=$(gh api user --jq .login)
+
+# set your GitHub personal access token
+export GITHUB_TOKEN=$(gh auth token)
 ```
 
-If all went well, you should see your pods coming online. Let's watch for them:
+Now we're ready to bootstrap FluxCD. Run the following command to bootstrap FluxCD. This command will install FluxCD with additional components to enable image automation. It will also generate the Flux resources and commit them to our Git repo in the `clusters/dev` directory.
 
 ```bash
-watch kubectl get pods -n store-dev -w
+flux bootstrap github create \
+  --owner=$GITHUB_USER \
+  --repository=gitops \
+  --personal \
+  --path=./clusters/dev \
+  --branch=main \
+  --reconcile \
+  --network-policy \
+  --components-extra=image-reflector-controller,image-automation-controller
 ```
 
-Let's test the application by grabbing the public IP address of the store service:
-
-```bash
-kubectl get svc/store-front -n store-dev
-```
-
-Open a browser and navigate to the IP address. You should see the store front page.
-
-## Making and managing changes
-
-With the FluxCD AKS extension installed and connected to our GitHub repo, we can now make changes by simply editing the kubernetes manifests and committing/pushing the changes back to the remote repo. At this point, it's all about Git workflows and processes.
-
-Let's make a small change to the dev overlay kustomization.yaml file. Let's say we want to change the name of the namespace from store-dev to just dev.
-
-Open the overlays/dev/kustomization.yaml file and change the namespace value from store-dev to dev.
-
-Compare the changes:
-
-```bash
-git diff overlays/dev/kustomization.yaml
-```
-
-Add the change, commit, and push to GitHub.
-
-Using the Flux CLI, you can force FluxCD to reconcile the cluster with the desired state defined in the repo.
-
-```bash
-flux reconcile kustomization aks-store-demo-dev --with-source
-```
-
-After a minute or two you should see the pods coming online in the new dev namespace. This is FluxCD reconciling the cluster with the desired state defined in the repo.
-
-You can check on the pods using the following command.
-
-```bash
-kubectl get pods -n dev
-```
-
-## Monitoring and Troubleshooting
-
-Some tips when it comes to monitoring and troubleshooting Flux resources is to use the Flux CLI. You can use some of these basic commands to get information about Flux and its resources:
-
-```bash
-# check the status of the flux installation
-flux check
-
-# get info about the GitRepository resource
-flux get source git aks-store-demo-dev -n flux-system
-
-# get info about the Kustomization resource
-flux get kustomization aks-store-demo-dev -n flux-system
-
-# view event logs from the flux controllers
-flux events
-
-# view logs from the flux controllers
-flux logs
-
-# view stats of the flux controllers
-flux stats
-```
-
-This showed the setup of FluxCD AKS Extension and how to use it to deploy applications to AKS cluster. Now we will move a bit deeper and how to use FluxCD to automate images updates.
-[Image updates](./IMAGE_UPDATES_README.md)

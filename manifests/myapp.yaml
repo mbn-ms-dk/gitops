@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+      containers:
+      - name: myapp
+        image: ffiacr.azurecr.io/myapp:v1
+        ports:
+        - containerPort: 5073
+          name: myapp
+        resources:
+          requests:
+            cpu: 1m
+            memory: 200Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 5073
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5073
+          failureThreshold: 3
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5073
+          failureThreshold: 5
+          initialDelaySeconds: 3
+          periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp
+spec:
+  ports:
+  - port: 80
+    targetPort: 5073
+  selector:
+    app: myapp
+  type: LoadBalancer
