@@ -201,10 +201,11 @@ export GITHUB_TOKEN=$(gh auth token)
 Now we're ready to bootstrap FluxCD. Run the following command to bootstrap FluxCD. This command will install FluxCD with additional components to enable image automation. It will also generate the Flux resources and commit them to our Git repo in the `clusters/dev` directory.
 
 ```bash
-flux bootstrap github create \
+flux bootstrap github \
   --owner=$GITHUB_USER \
   --repository=gitops \
-  --personal \
+  --personal=true \
+  --private=false \
   --path=./clusters/dev \
   --branch=main \
   --reconcile \
