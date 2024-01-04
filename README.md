@@ -252,3 +252,12 @@ flux create kustomization myapp \
   --health-check-timeout=3m \
   --export > ./clusters/dev/myapp-kustomization.yaml
 ```
+
+We have two new Flux resource manifests. Run the following command to commit and push the files to the repo so Flux can begin the reconciliation process.
+
+```bash
+git add -A
+git commit -m "feat: add source and kustomization"
+git push
+```
+
