@@ -296,4 +296,42 @@ With the FluxCD AKS extension installed and connected to our GitHub repo, we can
 
 Let's make a small change to the dev overlay `kustomization.yaml` file. Let's say we want to change the name of the namespace from `myapp-dev` to just `dev`.
 
-Open the overlays/dev/kustomization.yaml file and change the namespace value from store-dev to dev. 
+Open the overlays/dev/kustomization.yaml file and change the namespace value from store-dev to dev.
+
+Using the Flux CLI, you can force FluxCD to reconcile the cluster with the desired state defined in the repo.
+
+```bash
+flux reconcile kustomization myapp-demo-dev --with-source
+```
+
+After a minute or two you should see the pods coming online in the new `dev` namespace. This is FluxCD reconciling the cluster with the desired state defined in the repo.
+
+You can check on the pods using the following command.
+
+```bash
+kubectl get pods -n dev
+```
+
+## Monitoring and Troubleshooting
+
+Here's some tips when it comes to monitoring and troubleshooting Flux resources is to use the Flux CLI. You can use some of these basic commands to get information about Flux and its resources:
+
+```bash
+# check the status of the flux installation
+flux check
+
+# get info about the GitRepository resource
+flux get source git myapp-demo -n flux-system
+
+# get info about the Kustomization resource
+flux get kustomization myapp-demo-dev -n flux-system
+
+# view event logs from the flux controllers
+flux events
+
+# view logs from the flux controllers
+flux log
+
+# view stats of the flux controllers
+flux stats
+```
