@@ -18,7 +18,7 @@ spec:
       - name: myapp
         image: ffiacr.azurecr.io/myapp:v1
         ports:
-        - containerPort: 5073
+        - containerPort: 7230
           name: myapp
         resources:
           requests:
@@ -30,21 +30,21 @@ spec:
         startupProbe:
           httpGet:
             path: /health
-            port: 5073
+            port: 7230
           failureThreshold: 3
           initialDelaySeconds: 10
           periodSeconds: 5
         readinessProbe:
           httpGet:
             path: /health
-            port: 5073
+            port: 7230
           failureThreshold: 3
           initialDelaySeconds: 3
           periodSeconds: 3
         livenessProbe:
           httpGet:
             path: /health
-            port: 5073
+            port: 7230
           failureThreshold: 5
           initialDelaySeconds: 3
           periodSeconds: 3
@@ -56,7 +56,7 @@ metadata:
 spec:
   ports:
   - port: 80
-    targetPort: 5073
+    targetPort: 7230
   selector:
     app: myapp
   type: LoadBalancer
