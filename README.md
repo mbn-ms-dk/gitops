@@ -6,7 +6,9 @@ The intended workflow:
 2. Test locally
 3. Commit and push to GitHub
 4. push image to Azure Container Registry
-5. Kustomize the manifests
+5. Deploy aks
+6. Deploy FluxCD
+7. Kustomize the manifests
 
 ## Introduction
 
@@ -19,7 +21,6 @@ This guide will help you to use FluxCD to deploy your application to AKS cluster
 - [GitHub Account](https://github.com/)
 - [Flux CLI](https://fluxcd.io/docs/installation/#install-the-flux-cli)
 - [Kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/)
-
 
 ## Create the application
 
@@ -38,7 +39,7 @@ cd MyApp
 dotnet run
 ```
 
-You should see the app running on http://localhost:5073
+You should see the app running on http://localhost:7230
 
 ![MyApp](./images/initrun.png)
 
@@ -59,12 +60,12 @@ Create a dockerfile for the app
 
 ## Create an Azure Container Registry
 
-```bash	
+```bash
 $rgName="ffi-rg"
 $aksClusterName="ffi-aks"
 $location="swedencentral"
 $acrName="ffiacr"
-```	
+```
 
 Create a resource group for the Azure Container Registry and create the Azure Container Registry.
 
@@ -84,8 +85,7 @@ az acr build --registry $acrName -t myapp:v1 -f ./src/MyApp/dockerfile .
 Create AKS cluster using Azure CLI and attach the Azure Container Registry to the AKS cluster.
 
 ```bash
-az group create --name $rgName --location $location
-az aks create --resource-group $rgName --name $aksClusterName  --enable-addons monitoring --attach-acr $acrName
+
 ```
 
 Get AKS cluster credentials
@@ -113,22 +113,79 @@ Test the app
 ```bash
 kubectl get svc myapp
 ```
+
 The output should look like this:
 
 ![MyApp](./images/testonaks.png)
 
+## Install the FluxCD AKS extension
+
+AKS extensions are Microsoft-maintained packages that can be installed using Azure Resource Manager to enable additional functionality on your AKS cluster. In a way, AKS extensions are like AKS add-ons. However, AKS extensions are offered via a different Azure resource provider and therefore offers the flexibility to be installed on a variety of Kubernetes clusters including Azure Arc enabled Kubernetes clusters. Take a look at this article by @JorgeArteiro for more information on the differences between AKS extensions and AKS add-ons.
+
+## Install Azure CLI extensions
+
+```bash
+# enable new features for aks
+az extension add --name aks-preview
+
+# enable aks extension installations
+az extension add --name k8s-extension
+
+# enable aks extension configuration
+az extension add --name k8s-configuration
+```
+
+## Install FluxCD
+
+```bash
+az k8s-extension create --cluster-name $aksClusterName --resource-group $rgName --cluster-type managedClusters --extension-type microsoft.flux --name myapp
+```
+
+This command will install the FluxCD AKS extension on your AKS cluster. It is equivalent to running the flux install Flux CLI command.
+
+The first parameters are self-explanatory... we are using Azure Resource Manager to install the extension so you need to pass in the AKS cluster name and resource group.
+
+The parameters you need to be aware of here are `--cluster-type` and `--extension-type`. You need to specify `managedClusters` and `microsoft.flux` respectively which tells the Azure resource provider that you are installing the FluxCD extension on a managed AKS cluster. Getting these last parameters wrong will result in an error.
+
+With the extension installed, you can run the following Flux CLI command to get the status of the installation.
+
+```bash
+flux check --pre
+```
+
+Flux installs many new Custom Resource Definitions (CRDs) in the cluster. These CRDs are how you interact with FluxCD. You can run the following command to see all the new CRDs.
+
+```bash
+kubectl get crds | grep flux
+```
+
+![flux check](./images/flux-check.png)
+
+
 ## Prepare Kubernetes manifests for Kustomize
 
-Kustomize is not a templating engine like Helm, it is more like a patching engine. It allows you to create a base set of Kubernetes manifests and then patch them with environment specific configurations. These environmental configurations are known as "overlays". So you can have a `dev` overlay, a `prod` overlay, a `staging` overlay, etc. and use them to patch the base manifests with environment specific configurations.
+A successful GitOps implementation hinges on how well you structure your Git repository and how well you manage processes and workflows. GitOps tools are just that; they're tools, you need to do some work up front like determining file structure, branching strategy, branch protections, and workflows to ensure that you are setting yourself up for success.
 
-Use the Kustomize CLI, run the following command to create the base kustomization.yaml file:
+### "Kustomizing" manifests
+
+[Kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/) is not a templating engine like Helm, it is more like a patching engine. It allows you to create a base set of Kubernetes manifests and then patch them with environment specific configurations. These environmental configurations are known as "overlays". So you can have a `dev` overlay, a `prod` overlay, a `staging` overlay, etc. and use them to patch the base manifests with environment specific configurations.
+
+## Create a `dev` overlay
+
+All of our manifests currently sit a the `manifests` directory so from here we can create overlays for different environments.
+
+First we need to create our initial kusomtization.yaml file. This file will tell Kustomize where to find the base manifests and where to find the overlays.
+
+Using the Kustomize CLI, run the following command to create the base kustomization.yaml file:
 
 ```bash
 cd manifests
-kustomize create --autodetect
-```
 
-## Create a `dev` overlay
+kustomize create --autodetect
+
+# view the kustomization.yaml file
+cat kustomization.yaml
+```
 
 Next, we need to create an overlay for our dev environment.
 
@@ -145,16 +202,22 @@ We want our dev deployment to deploy to a new namespace so we'll create a new ma
 ```bash
 kubectl create namespace myapp-dev --dry-run=client -o yaml > namespace.yaml
 ```
+
 Generate the kustomization.yaml file for our dev overlay using the following command.
 
 ```bash
 kustomize create --resources namespace.yaml,./../../manifests --namespace myapp-dev
+
+# view the kustomization.yaml file
+cat kustomization.yaml
 ```
+
+## Kustomize in action
 
 Let's test the `dev` overlay by running the following command from the `dev` directory:
 
 ```bash
-kustomize build
+kustomize build 
 ```
 
 Notice how all the manifests are patched with the `myapp-dev` namespace and output to the console. This is how Kustomize works. It patches the base manifests with environment specific configurations and outputs the patched manifests to the console.
@@ -165,100 +228,18 @@ To deploy these patched manifests, you would run a command like this.
 kustomize build | kubectl apply -f -
 ```
 
-Hopefully you didn't run the command above. If you did, then you can delete this deployment with either of these commands.
+Kustomize is also built into kubectl so you can run the following command to apply the manifests to your cluster.
+  
+  ```bash
+  kubectl apply -k .
+  ```
 
-```bash
-# using kustomize
+  Hopefully you didn't run the commands above. If you did, no problem you can delete this deployment with either of these commands.
+
+  ```bash
+  # using kustomize
 kustomize build | kubectl delete -f -
 
 # or using kubectl
 kubectl delete -k .
-```
-
-## Bootstrapping FluxCD
-
-Use the Flux CLI to bootstrap FluxCD onto the AKS cluster. This process will enable us to have a bit more control over the installation and gives us the ability to save the Flux resources to our GitHub repo.
-
-First, we need the [Flux CLI](https://fluxcd.io/flux/installation/). Once you have the CLI installed, run the following command to ensure your cluster is ready for bootstrapping.
-
-```bash
-flux check --pre
-```
-
-We need to set some environment variables to for the Flux bootstrapping process. Run the following commands to set the environment variables (I switch to WSL here).
-
-```bash
-# set the repo url
-export GITHUB_REPO_URL=$(gh repo view --json url | jq .url -r)
-
-# set your GitHub username
-export GITHUB_USER=$(gh api user --jq .login)
-
-# set your GitHub personal access token
-export GITHUB_TOKEN=$(gh auth token)
-```
-
-Now we're ready to bootstrap FluxCD. Run the following command to bootstrap FluxCD. This command will install FluxCD with additional components to enable image automation. It will also generate the Flux resources and commit them to our Git repo in the `clusters/dev` directory.
-
-```bash
-flux bootstrap github \
-  --owner=$GITHUB_USER \
-  --repository=gitops \
-  --personal=true \
-  --private=false \
-  --path=./clusters/dev \
-  --branch=main \
-  --reconcile \
-  --network-policy \
-  --components-extra=image-reflector-controller,image-automation-controller
-```
-
-In order for the `image-automation-controller` to write commits to our repo, we need to create a Kubernetes secret to store our GitHub credentials. Run the following command to create the secret:
-
-```bash
-flux create secret git myapp \
-  --url=$GITHUB_REPO_URL \
-  --username=$GITHUB_USER \
-  --password=$GITHUB_TOKEN
-```
-
-We don't need the GitHub PAT token anymore, so run the following command to discard it.
-
-```bash
-unset GITHUB_TOKEN
-```
-
-Next we need to create a `GitRepository` resource.
-Run the following command to create the configuration and export it to a YAML file which we'll commit to our repo:
-
-```bash
-flux create source git myapp \
-  --url=$GITHUB_REPO_URL \
-  --branch=main \
-  --interval=1m \
-  --secret-ref=myapp \
-  --export > ./clusters/dev/myapp-source.yaml
-```
-
-We also need to specify the Kustomization resource to tell FluxCD where to find the app deployment manifests in our repo. Run the following command to create the configuration and export it to a YAML file which we'll also commit to our repo.
-
-```bash
-flux create kustomization myapp \
-  --source=gitops \
-  --path="./overlays/dev" \
-  --prune=true \
-  --wait=true \
-  --interval=1m \
-  --retry-interval=2m \
-  --health-check-timeout=3m \
-  --export > ./clusters/dev/myapp-kustomization.yaml
-```
-
-We have two new Flux resource manifests. Run the following command to commit and push the files to the repo so Flux can begin the reconciliation process.
-
-```bash
-git add -A
-git commit -m "feat: add source and kustomization"
-git push
-```
-
+  ```
