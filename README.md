@@ -243,3 +243,57 @@ kustomize build | kubectl delete -f -
 # or using kubectl
 kubectl delete -k .
   ```
+
+## Deploying Applications with FluxCD
+
+Now that we have our manifests structured in a way that we can use Kustomize to patch them with environment specific configurations, we can use FluxCD to deploy our application to our AKS cluster.
+Run the following command to get the GitHub HTTP URL for your repo.
+
+```bash
+$GhRepoURL=$(gh repo view --json url | jq .url -r)
+```
+
+Using Azure CLI again, let's configure the FluxCD AKS extension to connect to our GitHub repo:
+
+```bash
+az k8s-configuration flux create --cluster-name $aksClusterName --resource-group $rgName --cluster-type managedClusters --name myapp-demo --url $GhRepoURL --branch main --kustomization name=dev path=./overlays/dev --namespace flux-system
+```
+
+This command is equivalent to running the `flux create source` and `flux create kustomization` Flux CLI commands.
+
+Here, we are telling the FluxCD AKS extension to connect to our GitHub repo and monitor the `main` branch for changes.
+
+The Azure resource name is set to `myapp-demo` and we pass in a kustomization name of `dev`. These two values will be used to create the `Kustomization` resources in the cluster.
+
+We also tell the Flux resource where look for our manifests by passing it `path=./overlays/dev`.
+
+Lastly, we tell Flux to create new Flux `GitRepository` and `Kustomization` resources in the `flux-system` namespace. You can change this to whatever namespace you want. I used `flux-system` for simplicity.
+
+If you run the following Flux CLI commands you should see some resources created.
+
+```bash
+flux get source git
+flux get kustomization
+```
+
+If all went well, you should see your pods coming online. Let's watch for them:
+
+```bash
+kubectl get pods -w -n myapp-dev
+```
+
+Once you see all the pods running, you can exit the watch by pressing `CTRL+C`.
+
+Let's test the application by grabbing the public IP address of the `myapp` service:
+
+```bash
+kubectl get svc myapp -n myapp-dev
+```
+
+## Making and managing changes
+
+With the FluxCD AKS extension installed and connected to our GitHub repo, we can now make changes by simply editing the kubernetes manifests and committing/pushing the changes back to the remote repo. At this point, it's all about Git workflows and processes.
+
+Let's make a small change to the dev overlay `kustomization.yaml` file. Let's say we want to change the name of the namespace from `myapp-dev` to just `dev`.
+
+Open the overlays/dev/kustomization.yaml file and change the namespace value from store-dev to dev. 
